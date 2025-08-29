@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id            Int      @id @default(autoincrement())
+  nombre        String
+  email         String   @unique
+  password      String
+  rol           Rol // ADMIN, OPERADOR, VENDEDOR
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  compras         Compra[]
+  comprasAbiertas CompraAbierta[] // relación con compras abiertas
+}
+
+model Proveedor {
+  id            Int      @id @default(autoincrement())
+  nombre        String
+  telefono      String?
+  email         String?
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  compras         Compra[]
+  comprasAbiertas CompraAbierta[] // relación con compras abiertas
+  pagos         PagoProveedor[]
+}
+
+model Compra {
+  id          Int        @id @default(autoincrement())
+  fecha       DateTime   @default(now())
+  tipoCompra  TipoCompra // CERRADA o ABIERTA
+  moneda      Moneda // USD o BOB
+  descuento   Float? // Solo aplica si moneda = USD
+  tipoCambio  Float? // Solo aplica si moneda = BOB
+  precioUnit  Float  
+  usuarioId   Int
+  proveedorId Int
+
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id])
+  proveedor Proveedor @relation(fields: [proveedorId], references: [id])
+
+  barras Barra[]
+  pagos  PagoCompra[] // Pagos parciales de la compra completa
+}
+
+model Barra {
+  id              Int        @id @default(autoincrement())
+  pesoGr          Float
+  purezaArriba    Float
+  purezaAbajo     Float
+  purezaDerecha   Float
+  purezaIzquierda Float
+  pureza          Float
+  pesoFino        Float // 👈 Nuevo: pesoGr * pureza
+  onzas           Float // 👈 Nuevo: pesoFino / 31.1035
+  precioUnit      Float
+  montoTotal      Float // calculado: onzas * precioUnit
+  tipoCompra      TipoCompra // CERRADA o ABIERTA
+
+  compraId Int
+  compra   Compra @relation(fields: [compraId], references: [id])
+}
+
+model PagoCompra {
+  id          Int      @id @default(autoincrement())
+  fecha       DateTime @default(now())
+  monto       Float
+  moneda      Moneda
+  observacion String?
+
+  compraId Int
+  compra   Compra @relation(fields: [compraId], references: [id])
+}
+
+enum TipoCompra {
+  CERRADA
+  ABIERTA
+}
+
+enum Moneda {
+  USD
+  BOB
+}
+
+enum Rol {
+  ADMIN
+  OPERADOR
+  VENDEDOR
+}
+
+model CompraAbierta {
+  id            Int      @id @default(autoincrement())
+  fecha         DateTime @default(now())
+  moneda        Moneda
+  descuento     Float? // igual que en Compra
+  tipoCambio    Float? // igual que en Compra
+  precioInicial Float // precio pactado por onza al inicio
+  onzasTotales  Float // total de onzas que cubrirán la compra
+  montoTotal    Float
+  montoBOB      Float? 
+  usuarioId     Int
+  proveedorId   Int
+
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id])
+  proveedor Proveedor @relation(fields: [proveedorId], references: [id])
+
+  barras  BarraAbierta[]
+  pagos   PagoCompraAbierta[]
+  cierres CierreCompraAbierta[]
+}
+
+model BarraAbierta {
+  id              Int   @id @default(autoincrement())
+  pesoGr          Float
+  purezaArriba    Float
+  purezaAbajo     Float
+  purezaDerecha   Float
+  purezaIzquierda Float
+  pureza          Float
+  pesoFino        Float
+  onzas           Float
+
+  montoUSD        Float?   // calculado automáticamente si la compra es USD
+  montoBOB        Float?
+
+  compraAbiertaId Int
+  compraAbierta   CompraAbierta @relation(fields: [compraAbiertaId], references: [id])
+}
+
+model PagoCompraAbierta {
+  id          Int      @id @default(autoincrement())
+  fecha       DateTime @default(now())
+  monto       Float
+  moneda      Moneda
+  observacion String?
+
+  compraAbiertaId Int
+  compraAbierta   CompraAbierta @relation(fields: [compraAbiertaId], references: [id])
+}
+
+model PagoProveedor {
+  id          Int       @id @default(autoincrement())
+  fecha       DateTime  @default(now())
+  monto       Float
+  moneda      Moneda
+  observacion String?
+
+  proveedorId Int
+  proveedor   Proveedor @relation(fields: [proveedorId], references: [id])
+}
+
+
+model CierreCompraAbierta {
+  id            Int      @id @default(autoincrement())
+  fecha         DateTime @default(now())
+  onzasCerradas Float
+  precioCierre  Float // precio final pactado en el cierre
+  precioCierreBOB  Float?   // precio en BOB calculado con el tipo de cambio
+  tipoCambio       Float?   // tipo de cambio aplicado al cierre
+  montoCierre   Float
+  descuento       Float?
+  compraAbiertaId Int
+  compraAbierta   CompraAbierta @relation(fields: [compraAbiertaId], references: [id])
+}
