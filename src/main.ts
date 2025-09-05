@@ -5,6 +5,12 @@ import { ValidationPipe } from '@nestjs/common';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // habilitar CORS
+  app.enableCors({
+    origin: 'http://localhost:4200', // tu frontend Angular
+    credentials: true,
+  });
+
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: true,
@@ -13,4 +19,6 @@ async function bootstrap() {
 
   await app.listen(process.env.PORT ?? 3000);
 }
+
+//aqui se hicieron algunos  cambios  para probar el github, prueba
 bootstrap();
