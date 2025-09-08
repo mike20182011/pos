@@ -44,6 +44,11 @@ model Compra {
   usuarioId   Int
   proveedorId Int
 
+  montoUSD    Float?
+  montoBOB    Float?
+  totalOnzas Float?
+
+
   usuario   Usuario   @relation(fields: [usuarioId], references: [id])
   proveedor Proveedor @relation(fields: [proveedorId], references: [id])
 

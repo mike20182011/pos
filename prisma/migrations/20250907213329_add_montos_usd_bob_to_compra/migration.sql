@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "public"."Compra" ADD COLUMN     "montoBOB" DOUBLE PRECISION,
+ADD COLUMN     "montoUSD" DOUBLE PRECISION;
