@@ -12,6 +12,19 @@ import { CerrarParcialPorBarrasDto } from './dto/cerrar-parcial-por-barras.dto';
 export class ComprasAbiertasService {
   constructor(private prisma: PrismaService) {}
 
+
+  async findAll() {
+  return this.prisma.compraAbierta.findMany({
+    include: {
+      barras: true,
+      cierres: true,
+      proveedor: true, // si tienes relación con proveedor
+      usuario: true,   // si tienes relación con usuario
+    },
+  });
+}
+
+
 async createCompraAbierta(data: CreateCompraAbiertaDto) {
   // Calcular las barras con los campos que Prisma espera
   const barrasProcesadas = data.barras.map(b => {

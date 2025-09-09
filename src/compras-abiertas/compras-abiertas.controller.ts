@@ -9,6 +9,11 @@ import { CerrarParcialPorBarrasDto } from './dto/cerrar-parcial-por-barras.dto';
 export class ComprasAbiertasController {
   constructor(private readonly service: ComprasAbiertasService) {}
 
+
+  @Get()
+  async findAll() {
+    return this.service.findAll();
+  }
   @Post()
   async create(@Body() dto: CreateCompraAbiertaDto) {
     return this.service.createCompraAbierta(dto);
