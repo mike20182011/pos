@@ -29,11 +29,35 @@ export class PagosService {
   }
 
   async obtenerPagosProveedor(proveedorId: number) {
-    return this.prisma.pagoProveedor.findMany({
-      where: { proveedorId },
-      orderBy: { fecha: 'desc' },
-    });
-  }
+  if (!proveedorId) throw new Error('proveedorId es requerido'); // opcional para debug
+  return this.prisma.pagoProveedor.findMany({
+    where: { proveedorId: proveedorId }, // o simplemente { proveedorId }
+    orderBy: { fecha: 'desc' },
+  });
+}
+
+async obtenerTodosLosPagos() {
+  const pagos = await this.prisma.pagoProveedor.findMany({
+    orderBy: { fecha: 'desc' },
+    include: {
+      proveedor: {
+        select: { nombre: true },
+      },
+    },
+  });
+
+  // Aplana el resultado para que sea más fácil en el frontend
+  return pagos.map(p => ({
+    id: p.id,
+    fecha: p.fecha,
+    monto: p.monto,
+    moneda: p.moneda,
+    observacion: p.observacion,
+    proveedorId: p.proveedorId,
+    proveedorNombre: p.proveedor?.nombre ?? '---',
+  }));
+}
+
 
   async obtenerBalanceProveedor(proveedorId: number) {
   // Total deuda por compras activas
@@ -116,6 +140,99 @@ async obtenerBalanceGeneralProveedor(proveedorId: number) {
     pagosTotal: truncarDosDecimales(pagosTotal),
     saldoPendiente: truncarDosDecimales(deudaTotal - pagosTotal),
   };
+}
+
+//funcion para devolver todos los proveedorres con su
+async obtenerBalanceGeneralTodosProveedores() {
+  // 1️⃣ Obtener todos los proveedores
+  const proveedores = await this.prisma.proveedor.findMany({
+    select: { id: true, nombre: true },
+  });
+
+  // 2️⃣ Procesar cada proveedor
+  const balances = await Promise.all(
+    proveedores.map(async (prov) => {
+      // 🟢 COMPRAS ABIERTAS
+      const comprasAbiertas = await this.prisma.compraAbierta.findMany({
+        where: { proveedorId: prov.id },
+        include: { cierres: true },
+      });
+
+      const comprasUSD = comprasAbiertas.filter(c => c.moneda === 'USD');
+      const comprasBOB = comprasAbiertas.filter(c => c.moneda === 'BOB');
+
+      const deudaComprasUSD = comprasUSD.reduce((acc, c) => acc + (c.montoTotal ?? 0), 0);
+      const deudaComprasBOB = comprasBOB.reduce((acc, c) => acc + (c.montoBOB ?? 0), 0);
+
+      const deudaCierresUSD = comprasUSD.reduce(
+        (acc, c) => acc + c.cierres.reduce((sum, cierre) => sum + (cierre.montoCierre ?? 0), 0),
+        0
+      );
+      const deudaCierresBOB = comprasBOB.reduce(
+        (acc, c) => acc + c.cierres.reduce((sum, cierre) => sum + (cierre.precioCierreBOB ?? 0), 0),
+        0
+      );
+
+      // 🟢 COMPRAS CERRADAS
+      const comprasCerradas = await this.prisma.compra.findMany({
+        where: { proveedorId: prov.id },
+      });
+
+      const deudaCompraCerradaUSD = comprasCerradas
+        .filter(c => c.moneda === 'USD')
+        .reduce((acc, c) => acc + (c.montoUSD ?? 0), 0);
+
+      const deudaCompraCerradaBOB = comprasCerradas
+        .filter(c => c.moneda === 'BOB')
+        .reduce((acc, c) => acc + (c.montoBOB ?? 0), 0);
+
+      // 🟢 SUMAR TODO
+      const deudaTotalUSD = deudaComprasUSD + deudaCierresUSD + deudaCompraCerradaUSD;
+      const deudaTotalBOB = deudaComprasBOB + deudaCierresBOB + deudaCompraCerradaBOB;
+
+      // 🟢 PAGOS
+      const pagos = await this.prisma.pagoProveedor.findMany({
+        where: { proveedorId: prov.id },
+      });
+
+      const pagosUSD = pagos.filter(p => p.moneda === 'USD').reduce((acc, p) => acc + p.monto, 0);
+      const pagosBOB = pagos.filter(p => p.moneda === 'BOB').reduce((acc, p) => acc + p.monto, 0);
+
+      return {
+        proveedorId: prov.id,
+        nombre: prov.nombre,
+
+        // saldos finales
+        saldoUSD: deudaTotalUSD - pagosUSD,
+        saldoBOB: deudaTotalBOB - pagosBOB,
+
+        // desglose de deudas
+        deudaComprasUSD,
+        deudaComprasBOB,
+        deudaCierresUSD,
+        deudaCierresBOB,
+        deudaCompraCerradaUSD,
+        deudaCompraCerradaBOB,
+
+        // totales
+        deudaTotalUSD,
+        deudaTotalBOB,
+
+        // pagos
+        pagosTotalUSD: pagosUSD,
+        pagosTotalBOB: pagosBOB,
+      };
+    })
+  );
+
+  return balances;
+}
+
+
+// pagos.service.ts
+async obtenerBalanceProveedor2(proveedorId: number) {
+  const balances = await this.obtenerBalanceGeneralTodosProveedores(); // reutilizas tu función existente
+  return balances.find(b => b.proveedorId === proveedorId);
 }
 
 

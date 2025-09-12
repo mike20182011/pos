@@ -4,6 +4,7 @@ import { CreateCompraAbiertaDto } from './dto/create-compra-abierta.dto';
 import { CerrarParcialCompraAbiertaDto } from './dto/cerrar-parcial-compra-abierta.dto';
 import { CerrarParcialPorBarraDto } from './dto/cerrar-parcial-por-barra.dto';
 import { CerrarParcialPorBarrasDto } from './dto/cerrar-parcial-por-barras.dto';
+import { CerrarParcialTotalDto } from './dto/cerrar-parcial-total.dto';
 
 @Controller('compras-abiertas')
 export class ComprasAbiertasController {
@@ -14,6 +15,14 @@ export class ComprasAbiertasController {
   async findAll() {
     return this.service.findAll();
   }
+
+  // compras-abiertas.controller.ts
+@Get('total-onzas-proveedor')
+async obtenerOnzasPorProveedor() {
+  return this.service.obtenerOnzasPorProveedor();
+}
+
+
   @Post()
   async create(@Body() dto: CreateCompraAbiertaDto) {
     return this.service.createCompraAbierta(dto);
@@ -40,5 +49,9 @@ async cerrarPorBarras(@Body() dto: CerrarParcialPorBarrasDto) {
   return this.service.cerrarPorBarras(dto);
 }
 
+@Post('cerrar-parcial-total')
+  async cerrarParcialTotal(@Body() dto: CerrarParcialTotalDto) {
+    return this.service.cerrarParcialSobreTotal(dto);
+  }
 
 }

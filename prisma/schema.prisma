@@ -27,11 +27,29 @@ model Proveedor {
   email         String?
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
-
+  onzasUSD      Float    @default(0)  // total de onzas abiertas en USD
+  onzasBOB      Float    @default(0)  // total de onzas abiertas en BOB
   compras         Compra[]
   comprasAbiertas CompraAbierta[] // relación con compras abiertas
   pagos         PagoProveedor[]
+  cierres         CierreProveedor[]
 }
+
+
+model CierreProveedor {
+  id             Int      @id @default(autoincrement())
+  proveedorId    Int
+  proveedor      Proveedor @relation(fields: [proveedorId], references: [id])
+  moneda         Moneda    // 'USD' | 'BOB'
+  onzasCerradas  Float
+  precioUnitario Float
+  descuento      Float?    // solo aplica si moneda es USD
+  tipoCambio     Float?    // solo aplica si moneda es BOB
+  montoCierreUSD Float?    // siempre calculamos en USD
+  montoCierreBOB Float?    // solo si es BOB
+  creadoEn       DateTime  @default(now())
+}
+
 
 model Compra {
   id          Int        @id @default(autoincrement())
@@ -138,7 +156,21 @@ model BarraAbierta {
 
   compraAbiertaId Int
   compraAbierta   CompraAbierta @relation(fields: [compraAbiertaId], references: [id])
+
+  historicos      BarraAbiertaHistorico[]
 }
+
+
+model BarraAbiertaHistorico {
+  id              Int      @id @default(autoincrement())
+  barraAbiertaId  Int
+  onzasOriginal   Float
+  fecha           DateTime @default(now())
+  usuarioId       Int?     // opcional, si quieres guardar el usuario que hizo el cambio
+
+  barraAbierta    BarraAbierta @relation(fields: [barraAbiertaId], references: [id])
+}
+
 
 model PagoCompraAbierta {
   id          Int      @id @default(autoincrement())

@@ -6,6 +6,7 @@ import { CerrarParcialCompraAbiertaDto } from './dto/cerrar-parcial-compra-abier
 import { truncarDosDecimales } from 'src/utils/number.utils';
 import { CerrarParcialPorBarraDto } from './dto/cerrar-parcial-por-barra.dto';
 import { CerrarParcialPorBarrasDto } from './dto/cerrar-parcial-por-barras.dto';
+import { CerrarParcialTotalDto } from './dto/cerrar-parcial-total.dto';
 
 
 @Injectable()
@@ -26,96 +27,91 @@ export class ComprasAbiertasService {
 
 
 async createCompraAbierta(data: CreateCompraAbiertaDto) {
-  // Calcular las barras con los campos que Prisma espera
+  // 1️⃣ Procesar cada barra
   const barrasProcesadas = data.barras.map(b => {
-  const pureza = truncarDosDecimales(
-    (b.purezaArriba + b.purezaAbajo + b.purezaDerecha + b.purezaIzquierda) / 4
-  );
-
-  const pesoFino = truncarDosDecimales(b.pesoGr * pureza);
-  const onzas = truncarDosDecimales(pesoFino / 31.1035);
-
-  // Calcular monto base de la barra
-  let montoBase = truncarDosDecimales(onzas * data.precioInicial);
-
-  // Aplicar regla del 90%
-  montoBase = truncarDosDecimales(montoBase * 0.9);
-
-  // Aplicar descuento si USD
-  if (data.moneda === 'USD' && data.descuentoPorcentaje) {
-    montoBase = truncarDosDecimales(
-      montoBase * (100 - data.descuentoPorcentaje) / 100
+    const pureza = truncarDosDecimales(
+      (b.purezaArriba + b.purezaAbajo + b.purezaDerecha + b.purezaIzquierda) / 4
     );
-  }
 
-  let montoUSD: number | null = null;
-  let montoBOB: number | null = null;
+    const pesoFino = truncarDosDecimales(b.pesoGr * pureza);
+    const onzas = truncarDosDecimales(pesoFino / 31.1035);
 
-  if (data.moneda === 'USD') {
-    montoUSD = montoBase;
-  } else if (data.moneda === 'BOB') {
-    if (!data.tipoCambio) {
-      throw new BadRequestException('Se requiere tipoCambio para moneda BOB');
+    // Calcular monto base
+    let montoBase = truncarDosDecimales(onzas * data.precioInicial * 0.9);
+
+    if (data.moneda === 'USD' && data.descuentoPorcentaje) {
+      montoBase = truncarDosDecimales(
+        montoBase * (100 - data.descuentoPorcentaje) / 100
+      );
     }
-    montoBOB = truncarDosDecimales(montoBase * data.tipoCambio);
-  }
 
-  return {
-    pesoGr: truncarDosDecimales(b.pesoGr),
-    purezaArriba: b.purezaArriba,
-    purezaAbajo: b.purezaAbajo,
-    purezaDerecha: b.purezaDerecha,
-    purezaIzquierda: b.purezaIzquierda,
-    pureza,
-    pesoFino,
-    onzas,
-    montoUSD,
-    montoBOB,
-  };
-});
+    const montoUSD = data.moneda === 'USD' ? montoBase : 0;
+    const montoBOB = data.moneda === 'BOB'
+      ? truncarDosDecimales(montoBase * (data.tipoCambio ?? 1))
+      : 0;
 
+    return {
+      pesoGr: truncarDosDecimales(b.pesoGr),
+      purezaArriba: b.purezaArriba,
+      purezaAbajo: b.purezaAbajo,
+      purezaDerecha: b.purezaDerecha,
+      purezaIzquierda: b.purezaIzquierda,
+      pureza,
+      pesoFino,
+      onzas,
+      montoUSD,
+      montoBOB,
+    };
+  });
 
-  // Calcular onzas totales
+  // 2️⃣ Calcular totales de la compra
   const onzasTotales = truncarDosDecimales(
     barrasProcesadas.reduce((acc, b) => acc + b.onzas, 0)
   );
 
-  // Monto total inicial
-  let montoTotal = truncarDosDecimales(onzasTotales * data.precioInicial);
-  montoTotal = truncarDosDecimales(montoTotal * 0.9);
+  const montoTotalUSD = data.moneda === 'USD'
+    ? truncarDosDecimales(
+        onzasTotales * data.precioInicial * 0.9 * ((100 - (data.descuentoPorcentaje ?? 0)) / 100)
+      )
+    : 0;
 
-  // Aplicar descuento si USD
-  if (data.moneda === 'USD' && data.descuentoPorcentaje) {
-    montoTotal = truncarDosDecimales(
-      montoTotal * (100 - data.descuentoPorcentaje) / 100
-    );
-  }
+  const montoTotalBOB = data.moneda === 'BOB'
+    ? truncarDosDecimales(onzasTotales * data.precioInicial * 0.9 * (data.tipoCambio ?? 1))
+    : 0;
 
-  // Calcular monto BOB si corresponde
-  let montoBOB: number | null = null;
-  if (data.moneda === 'BOB') {
-    montoBOB = truncarDosDecimales(montoTotal * data.tipoCambio!);
-  }
-
-  // Guardar la compra
-  return this.prisma.compraAbierta.create({
+  // 3️⃣ Crear la compra abierta
+  const compra = await this.prisma.compraAbierta.create({
     data: {
       usuarioId: data.usuarioId,
       proveedorId: data.proveedorId,
       precioInicial: truncarDosDecimales(data.precioInicial),
       moneda: data.moneda,
       onzasTotales,
-      montoTotal,
-      montoBOB,
-      descuento: data.moneda === 'USD' ? data.descuentoPorcentaje ?? null : null,
-      tipoCambio: data.moneda === 'BOB' ? data.tipoCambio ?? null : null,
-      barras: {
-        create: barrasProcesadas,
-      },
+      montoTotal: montoTotalUSD,
+      montoBOB: montoTotalBOB,
+      descuento: data.moneda === 'USD' ? data.descuentoPorcentaje ?? 0 : 0,
+      tipoCambio: data.moneda === 'BOB' ? data.tipoCambio ?? 1 : 1,
+      barras: { create: barrasProcesadas },
     },
     include: { barras: true },
   });
+
+  // 4️⃣ Actualizar el total de onzas del proveedor según la moneda
+  const incrementField =
+    data.moneda === 'USD'
+      ? { onzasUSD: { increment: onzasTotales } }
+      : { onzasBOB: { increment: onzasTotales } };
+
+  await this.prisma.proveedor.update({
+    where: { id: data.proveedorId },
+    data: incrementField,
+  });
+
+  return compra;
 }
+
+
+
 
 
 
@@ -332,7 +328,146 @@ async cerrarPorBarras(dto: CerrarParcialPorBarrasDto) {
 }
 
 
+//funciona para el total de onzas de todas las compras
+// compras-abiertas.service.ts
+async obtenerOnzasPorProveedor() {
+  const compras = await this.prisma.compraAbierta.findMany({
+    select: {
+      proveedorId: true,
+      onzasTotales: true,
+      moneda: true,
+      proveedor: {
+        select: {
+          id: true,
+          nombre: true,
+        },
+      },
+    },
+    where: {
+      onzasTotales: {
+        gt: 0, // opcional: mostrar solo compras con onzas pendientes
+      },
+    },
+  });
 
+  // Agrupamos por proveedor
+  const resultado = compras.reduce((acc, compra) => {
+    const id = compra.proveedorId;
+
+    if (!acc[id]) {
+      acc[id] = {
+        proveedorId: compra.proveedor.id,
+        proveedorNombre: compra.proveedor.nombre,
+        onzasPorMoneda: [],
+      };
+    }
+
+    // Buscamos si ya existe entrada para esa moneda
+    const monedaExistente = acc[id].onzasPorMoneda.find(
+      (m) => m.moneda === compra.moneda,
+    );
+
+    if (monedaExistente) {
+      monedaExistente.totalOnzas += compra.onzasTotales ?? 0;
+    } else {
+      acc[id].onzasPorMoneda.push({
+        moneda: compra.moneda,
+        totalOnzas: compra.onzasTotales ?? 0,
+      });
+    }
+
+    return acc;
+  }, {} as Record<
+    number,
+    {
+      proveedorId: number;
+      proveedorNombre: string;
+      onzasPorMoneda: { moneda: string; totalOnzas: number }[];
+    }
+  >);
+
+  return Object.values(resultado);
+}
+
+
+
+//funcion pra cerrar onzas totales de todas la compraas abiertas
+async cerrarParcialSobreTotal(dto: CerrarParcialTotalDto) {
+  const { proveedorId, onzasCerradas, precioUnitActual, descuento, tipoCambio } = dto;
+
+  // 1️⃣ Obtener todas las compras abiertas de este proveedor
+  const compras = await this.prisma.compraAbierta.findMany({
+    where: { proveedorId },
+    orderBy: { fecha: 'asc' }, // cerramos primero las más antiguas
+  });
+
+  if (compras.length === 0) throw new NotFoundException('No hay compras abiertas para este proveedor');
+
+  // 2️⃣ Calcular total de onzas
+  const totalOnzasDisponibles = compras.reduce((sum, c) => sum + c.onzasTotales, 0);
+  if (onzasCerradas > totalOnzasDisponibles) {
+    throw new BadRequestException('No se pueden cerrar más onzas de las que están abiertas');
+  }
+
+  let onzasRestantesPorCerrar = onzasCerradas;
+
+  const comprasActualizadas: any[] = [];
+
+
+  for (const compra of compras) {
+    if (onzasRestantesPorCerrar <= 0) break;
+
+    const cerrarAhora = Math.min(compra.onzasTotales, onzasRestantesPorCerrar);
+
+    // monto del cierre
+    let montoCierreUSD = cerrarAhora * precioUnitActual;
+    if (compra.moneda === 'USD' && descuento) {
+      montoCierreUSD = montoCierreUSD * (100 - descuento) / 100;
+    }
+    let montoCierreBOB: number | null = null;
+    if (compra.moneda === 'BOB') {
+      if (!tipoCambio) throw new BadRequestException('Se requiere tipo de cambio para moneda BOB');
+      montoCierreBOB = montoCierreUSD * tipoCambio;
+    }
+
+    // crear cierre
+    await this.prisma.cierreCompraAbierta.create({
+      data: {
+        compraAbiertaId: compra.id,
+        onzasCerradas: cerrarAhora,
+        precioCierre: precioUnitActual,
+        precioCierreBOB: montoCierreBOB,
+        tipoCambio: tipoCambio ?? null,
+        montoCierre: montoCierreUSD,
+        descuento: compra.moneda === 'USD' ? descuento ?? null : null,
+      },
+    });
+
+    // actualizar compra
+    const onzasRestantes = compra.onzasTotales - cerrarAhora;
+    let montoTotalRestante = onzasRestantes * compra.precioInicial * 0.9; // mismo cálculo que antes
+    if (compra.moneda === 'USD' && compra.descuento) {
+      montoTotalRestante = montoTotalRestante * (100 - compra.descuento) / 100;
+    }
+
+    const compraActualizada = await this.prisma.compraAbierta.update({
+      where: { id: compra.id },
+      data: {
+        onzasTotales: onzasRestantes,
+        montoTotal: montoTotalRestante,
+        montoBOB: compra.moneda === 'BOB' && tipoCambio ? montoTotalRestante * tipoCambio : null,
+      },
+    });
+
+    comprasActualizadas.push(compraActualizada);
+    onzasRestantesPorCerrar -= cerrarAhora;
+  }
+
+  return comprasActualizadas;
+}
+
+
+//funcion para restar onzas por proveedor
 
 
 }
